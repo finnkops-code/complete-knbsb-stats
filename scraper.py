@@ -1,7 +1,7 @@
 """
-KNBSB Hoofdklasse Stats Scraper
-Haalt batting, pitching en fielding stats op via Playwright (JS-rendered)
-en slaat alles op als JSON in de /data map.
+KNBSB Hoofdklasse Stats Scraper – API versie
+Roept de JSON API rechtstreeks aan, geen browser nodig.
+Resultaten worden opgeslagen in /data als JSON.
 """
 
 import json
@@ -9,246 +9,206 @@ import os
 import re
 import time
 from datetime import datetime, timezone
-from playwright.sync_api import sync_playwright
 
-BASE_URL = "https://stats.knbsbstats.nl/en/events/2026-lucky-day-hoofdklasse"
-DATA_DIR = "data"
+import requests
+
+BASE = "https://stats.knbsbstats.nl/api/v1/stats/events/2026-lucky-day-hoofdklasse"
+DATA = "data"
+os.makedirs(DATA, exist_ok=True)
+
+HEADERS = {
+    "Accept": "application/json",
+    "Referer": "https://stats.knbsbstats.nl/en/events/2026-lucky-day-hoofdklasse/stats",
+    "User-Agent": "Mozilla/5.0 (compatible; HoofdklasseBot/2.0)",
+}
 
 TEAMS = {
-    "Amsterdam Pirates": "39583",
-    "Curaçao Neptunus": "39587",
-    "HCAW": "39584",
-    "Kinheim": "39586",
-    "Worldwide Pharma Logistics Hoofddorp Pioniers": "39585",
-    "Oosterhout Twins": "39588",
-    "UVV": "39589",
+    "Amsterdam Pirates":                           "39583",
+    "Curaçao Neptunus":                            "39587",
+    "HCAW":                                        "39584",
+    "Kinheim":                                     "39586",
+    "Worldwide Pharma Logistics Hoofddorp Pioniers":"39585",
+    "Oosterhout Twins":                            "39588",
+    "UVV":                                         "39589",
 }
 
 SPLITS = [
-    "All Splits",
-    "Last 3 Games",
-    "Last 5 Games",
-    "Last 7 Games",
-    "Home games",
-    "Away games",
+    "", "last3", "last5", "last7", "home", "away",
+    "day", "night",
+    "0outs", "1out", "2outs",
+    "vsleft", "vsright",
+    "empty", "runner1", "runner2", "runner3",
+    "runners12", "runners13", "runners23", "loaded",
+    "scoring", "behind", "ahead",
 ]
 
-os.makedirs(DATA_DIR, exist_ok=True)
-os.makedirs(f"{DATA_DIR}/teams", exist_ok=True)
+STAT_SECTIONS = ["batting", "pitching", "fielding"]
 
 
-def wait_for_table(page, timeout=15000):
-    """Wacht tot een stats-tabel zichtbaar is."""
-    try:
-        page.wait_for_selector("table tbody tr", timeout=timeout)
-        page.wait_for_timeout(800)  # Extra wacht voor lazy-loaded data
-    except Exception:
-        pass
+def clean_name(html: str) -> str:
+    """Verwijder HTML-tags uit naam-veld."""
+    text = re.sub(r"<[^>]+>", " ", html)
+    return " ".join(text.split()).strip()
 
 
-def parse_table(page, label):
-    """Haal alle rijen + headers uit een visible tabel."""
-    try:
-        tables = page.query_selector_all("table")
-        results = []
-        for table in tables:
-            headers = [th.inner_text().strip() for th in table.query_selector_all("thead th")]
-            if not headers:
-                continue
-            rows = []
-            for tr in table.query_selector_all("tbody tr"):
-                cells = [td.inner_text().strip() for td in tr.query_selector_all("td")]
-                if cells and len(cells) == len(headers):
-                    rows.append(dict(zip(headers, cells)))
-            if rows:
-                results.append({"label": label, "headers": headers, "rows": rows})
-        return results
-    except Exception as e:
-        print(f"  ⚠️  Fout bij parsen tabel '{label}': {e}")
-        return []
+def fetch(url: str, params: dict = None) -> dict | None:
+    """Doe een GET-verzoek met retry."""
+    for attempt in range(3):
+        try:
+            r = requests.get(url, params=params, headers=HEADERS, timeout=20)
+            r.raise_for_status()
+            return r.json()
+        except Exception as e:
+            print(f"  ⚠ Poging {attempt+1} mislukt ({url}): {e}")
+            time.sleep(2 ** attempt)
+    return None
 
 
-def click_tab(page, tab_text):
-    """Klik op een tab-knop (Batting / Pitching / Fielding)."""
-    try:
-        tab = page.get_by_role("tab", name=re.compile(tab_text, re.IGNORECASE))
-        if not tab.count():
-            tab = page.locator(f"text={tab_text}").first
-        tab.click()
-        page.wait_for_timeout(1200)
-    except Exception as e:
-        print(f"  ⚠️  Kon tab '{tab_text}' niet klikken: {e}")
+def clean_players(data: list) -> list:
+    """Maak namen leesbaar en voeg een 'player_id' veld toe."""
+    out = []
+    for row in data:
+        row = dict(row)
+        row["name"] = clean_name(row.get("name", ""))
+        # Haal player-id uit de link
+        link = row.get("link", "")
+        m = re.search(r"/players/(\d+)$", link)
+        row["player_id"] = m.group(1) if m else None
+        out.append(row)
+    return out
 
 
-def select_filter(page, filter_name, value):
-    """Selecteer een filter (Team / Split) via de dropdown."""
-    try:
-        # Probeer select-element
-        sel = page.locator(f"select:near(:text('{filter_name}'))").first
-        if sel.count():
-            sel.select_option(label=value)
-            page.wait_for_timeout(1000)
-            return True
-        # Probeer listbox / dropdown-knop
-        btn = page.locator(f"button:has-text('{filter_name}'), [aria-label*='{filter_name}']").first
-        if btn.count():
-            btn.click()
-            page.wait_for_timeout(500)
-            option = page.locator(f"text={value}").first
-            option.click()
-            page.wait_for_timeout(1200)
-            return True
-    except Exception:
-        pass
-    return False
-
-
-def scrape_stats_page(page):
-    """Scrape alle stats-tabbladen op de stats-pagina."""
-    page.goto(f"{BASE_URL}/stats", wait_until="networkidle", timeout=30000)
-    wait_for_table(page)
-
-    all_data = {
-        "batting": [],
-        "pitching": [],
-        "fielding": [],
+def scrape_section(section: str, team: str = "", split: str = "",
+                   round_: str = "") -> dict | None:
+    """Haal één stats-sectie op."""
+    params = {
+        "section": "players",
+        "stats-section": section,
+        "team": team,
+        "round": round_,
+        "split": split,
+        "language": "en",
+    }
+    result = fetch(f"{BASE}/index", params)
+    if not result:
+        return None
+    return {
+        "data": clean_players(result.get("data", [])),
+        "headers": result.get("headers", []),
     }
 
-    for tab in ["Batting", "Pitching", "Fielding"]:
-        click_tab(page, tab)
-        wait_for_table(page)
-        tables = parse_table(page, f"All Teams - All Rounds - {tab}")
-        all_data[tab.lower()].extend(tables)
 
-    return all_data
+def scrape_all_stats():
+    """Scrape batting/pitching/fielding voor alle teams + splits."""
+    print("📊 Scraping stats (alle teams, alle secties)…")
+    all_stats = {}
 
+    for section in STAT_SECTIONS:
+        print(f"  ↳ {section}…")
+        result = scrape_section(section)
+        if result:
+            all_stats[section] = result
+        time.sleep(0.5)
 
-def scrape_team_stats(page, team_name, team_id):
-    """Scrape stats per team."""
-    url = f"{BASE_URL}/teams/{team_id}"
-    try:
-        page.goto(url, wait_until="networkidle", timeout=30000)
-        wait_for_table(page)
-        data = {"team": team_name, "id": team_id, "batting": [], "pitching": [], "fielding": []}
-        for tab in ["Batting", "Pitching", "Fielding"]:
-            click_tab(page, tab)
-            wait_for_table(page)
-            tables = parse_table(page, f"{team_name} - {tab}")
-            data[tab.lower()].extend(tables)
-        return data
-    except Exception as e:
-        print(f"  ⚠️  Fout bij team {team_name}: {e}")
-        return None
+    # Sla op
+    with open(f"{DATA}/stats.json", "w", encoding="utf-8") as f:
+        json.dump(all_stats, f, ensure_ascii=False, indent=2)
+    print(f"  ✅ stats.json ({sum(len(v['data']) for v in all_stats.values())} rijen)")
+    return all_stats
 
 
-def scrape_standings(page):
-    """Haal de standenlijst op."""
-    page.goto(f"{BASE_URL}/standings", wait_until="networkidle", timeout=30000)
-    page.wait_for_timeout(2000)
-    tables = parse_table(page, "Standings")
-    return tables
+def scrape_per_team():
+    """Scrape alle stats per team apart."""
+    print("👕 Scraping per team…")
+    os.makedirs(f"{DATA}/teams", exist_ok=True)
+    team_index = []
+
+    for name, team_id in TEAMS.items():
+        safe = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
+        team_data = {"name": name, "id": team_id, "sections": {}}
+
+        for section in STAT_SECTIONS:
+            result = scrape_section(section, team=team_id)
+            if result:
+                team_data["sections"][section] = result
+            time.sleep(0.3)
+
+        path = f"{DATA}/teams/{safe}.json"
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(team_data, f, ensure_ascii=False, indent=2)
+        team_index.append({"name": name, "id": team_id, "file": f"teams/{safe}.json"})
+        print(f"  ✅ {name}")
+
+    with open(f"{DATA}/teams/index.json", "w", encoding="utf-8") as f:
+        json.dump(team_index, f, ensure_ascii=False, indent=2)
 
 
-def scrape_schedule(page):
-    """Haal speelschema + resultaten op."""
-    page.goto(f"{BASE_URL}/schedule-and-results", wait_until="networkidle", timeout=30000)
-    page.wait_for_timeout(2000)
-    # Probeer wedstrijden via tekst te scrapen
-    games = []
-    try:
-        rows = page.query_selector_all(".game-row, .schedule-row, tr[data-game-id], .event-row")
-        for row in rows:
-            text = row.inner_text().strip()
-            if text:
-                games.append({"raw": text})
-    except Exception:
-        pass
-    tables = parse_table(page, "Schedule")
-    return {"tables": tables, "games": games}
+def scrape_splits():
+    """Scrape batting per split (thuis/uit/laatste N)."""
+    print("🔀 Scraping splits…")
+    interesting_splits = [
+        ("last3", "Last 3 Games"),
+        ("last5", "Last 5 Games"),
+        ("last7", "Last 7 Games"),
+        ("home",  "Home games"),
+        ("away",  "Away games"),
+    ]
+    splits_data = {}
+
+    for split_val, split_label in interesting_splits:
+        result = scrape_section("batting", split=split_val)
+        if result:
+            splits_data[split_val] = {"label": split_label, **result}
+        time.sleep(0.4)
+
+    with open(f"{DATA}/splits.json", "w", encoding="utf-8") as f:
+        json.dump(splits_data, f, ensure_ascii=False, indent=2)
+    print(f"  ✅ splits.json ({len(splits_data)} splits)")
 
 
-def scrape_leaderboard(page):
-    """Haal de leaderboard op (top spelers per categorie)."""
-    page.goto(f"{BASE_URL}/stats", wait_until="networkidle", timeout=30000)
-    wait_for_table(page)
-    # Zoek Leader board tab
-    try:
-        lb_tab = page.locator("text=Leader board, text=Leaderboard").first
-        if lb_tab.count():
-            lb_tab.click()
-            page.wait_for_timeout(1500)
-    except Exception:
-        pass
-    tables = parse_table(page, "Leaderboard")
-    return tables
+def scrape_standings():
+    """Haal de stand op via de aparte standings URL."""
+    print("🏆 Scraping standings…")
+    url = "https://stats.knbsbstats.nl/api/v1/events/2026-lucky-day-hoofdklasse/standings"
+    result = fetch(url)
+    if not result:
+        # Fallback: probeer alternatieve URL
+        result = fetch(f"{BASE}/standings")
+    if result:
+        with open(f"{DATA}/standings.json", "w", encoding="utf-8") as f:
+            json.dump(result, f, ensure_ascii=False, indent=2)
+        print("  ✅ standings.json")
+    else:
+        print("  ⚠ Standings niet beschikbaar via API")
+        # Schrijf leeg bestand zodat front-end niet crasht
+        with open(f"{DATA}/standings.json", "w") as f:
+            json.dump({}, f)
+
+
+def write_meta(stats: dict):
+    meta = {
+        "last_updated": datetime.now(timezone.utc).isoformat(),
+        "source": "https://stats.knbsbstats.nl/api/v1/stats/events/2026-lucky-day-hoofdklasse/",
+        "season": "2026 Lucky Day Hoofdklasse",
+        "player_counts": {s: len(v["data"]) for s, v in stats.items()},
+        "api_params": {
+            "stat_sections": STAT_SECTIONS,
+            "teams": TEAMS,
+        },
+    }
+    with open(f"{DATA}/meta.json", "w", encoding="utf-8") as f:
+        json.dump(meta, f, ensure_ascii=False, indent=2)
+    print(f"  ✅ meta.json")
 
 
 def main():
-    print(f"🚀 Start scrapen – {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}")
-
-    with sync_playwright() as pw:
-        browser = pw.chromium.launch(headless=True)
-        ctx = browser.new_context(
-            viewport={"width": 1440, "height": 900},
-            user_agent="Mozilla/5.0 (compatible; HoofdklasseBot/1.0)",
-        )
-        page = ctx.new_page()
-
-        # ── Standings ──────────────────────────────────────────────
-        print("📋 Scraping standings...")
-        standings = scrape_standings(page)
-        with open(f"{DATA_DIR}/standings.json", "w", encoding="utf-8") as f:
-            json.dump(standings, f, ensure_ascii=False, indent=2)
-
-        # ── Algemene stats ─────────────────────────────────────────
-        print("📊 Scraping algemene stats...")
-        general_stats = scrape_stats_page(page)
-        with open(f"{DATA_DIR}/stats.json", "w", encoding="utf-8") as f:
-            json.dump(general_stats, f, ensure_ascii=False, indent=2)
-
-        # ── Leaderboard ────────────────────────────────────────────
-        print("🏆 Scraping leaderboard...")
-        leaderboard = scrape_leaderboard(page)
-        with open(f"{DATA_DIR}/leaderboard.json", "w", encoding="utf-8") as f:
-            json.dump(leaderboard, f, ensure_ascii=False, indent=2)
-
-        # ── Schedule ───────────────────────────────────────────────
-        print("📅 Scraping schedule...")
-        schedule = scrape_schedule(page)
-        with open(f"{DATA_DIR}/schedule.json", "w", encoding="utf-8") as f:
-            json.dump(schedule, f, ensure_ascii=False, indent=2)
-
-        # ── Per team ───────────────────────────────────────────────
-        team_summary = []
-        for team_name, team_id in TEAMS.items():
-            print(f"⚾  Scraping team: {team_name}...")
-            team_data = scrape_team_stats(page, team_name, team_id)
-            if team_data:
-                safe_name = team_name.lower().replace(" ", "_").replace("ç", "c")
-                with open(f"{DATA_DIR}/teams/{safe_name}.json", "w", encoding="utf-8") as f:
-                    json.dump(team_data, f, ensure_ascii=False, indent=2)
-                team_summary.append({"name": team_name, "id": team_id, "file": f"teams/{safe_name}.json"})
-
-        # ── Meta / index ───────────────────────────────────────────
-        meta = {
-            "last_updated": datetime.now(timezone.utc).isoformat(),
-            "source": BASE_URL,
-            "season": "2026 Lucky Day Hoofdklasse",
-            "teams": team_summary,
-            "files": {
-                "standings": "standings.json",
-                "stats": "stats.json",
-                "leaderboard": "leaderboard.json",
-                "schedule": "schedule.json",
-            },
-        }
-        with open(f"{DATA_DIR}/meta.json", "w", encoding="utf-8") as f:
-            json.dump(meta, f, ensure_ascii=False, indent=2)
-
-        ctx.close()
-        browser.close()
-
-    print(f"✅ Klaar! Data opgeslagen in /{DATA_DIR}/")
+    print(f"\n🚀 KNBSB Hoofdklasse Scraper — {datetime.now(timezone.utc):%Y-%m-%d %H:%M UTC}\n")
+    stats    = scrape_all_stats()
+    scrape_per_team()
+    scrape_splits()
+    scrape_standings()
+    write_meta(stats)
+    print("\n✅ Klaar! Alle data staat in /data/\n")
 
 
 if __name__ == "__main__":
