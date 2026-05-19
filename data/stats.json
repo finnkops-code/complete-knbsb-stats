@@ -2992,25 +2992,29 @@
         "column": "avg",
         "label": "AVG",
         "format": true,
-        "tooltip": "AVG – Batting Average | batting average is determined by dividing a player’s hits by his total at-bats for a number between zero (shown as .000) and one (1.000)."
+        "tooltip": "AVG – Batting Average | batting average is determined by dividing a player’s hits by his total at-bats for a number between zero (shown as .000) and one (1.000).",
+        "format_type": "baseball_pct"
       },
       {
         "column": "slg",
         "label": "SLG",
         "format": true,
-        "tooltip": "SLG – Slugging Percentage | represents the total number of bases a player records per at-bat. The formula for slugging percentage is: (1B + 2Bx2 + 3Bx3 + HRx4)/AB."
+        "tooltip": "SLG – Slugging Percentage | represents the total number of bases a player records per at-bat. The formula for slugging percentage is: (1B + 2Bx2 + 3Bx3 + HRx4)/AB.",
+        "format_type": "baseball_pct"
       },
       {
         "column": "obp",
         "label": "OBP",
         "format": true,
-        "tooltip": "OBP – On Base Percentage | refers to how frequently a batter reaches base per plate appearance. Times on base include hits, walks and hit-by-pitches, but do not include errors, times reached on a fielder’s choice or a dropped third strike."
+        "tooltip": "OBP – On Base Percentage | refers to how frequently a batter reaches base per plate appearance. Times on base include hits, walks and hit-by-pitches, but do not include errors, times reached on a fielder’s choice or a dropped third strike.",
+        "format_type": "baseball_pct"
       },
       {
         "column": "ops",
         "label": "OPS",
         "format": true,
-        "tooltip": "OPS – On Base Plus Slugging Percentage | adds on-base percentage and slugging percentage to get one number that unites the two. It’s meant to combine how well a hitter can reach base, with how well he can hit for average and for power."
+        "tooltip": "OPS – On Base Plus Slugging Percentage | adds on-base percentage and slugging percentage to get one number that unites the two. It’s meant to combine how well a hitter can reach base, with how well he can hit for average and for power.",
+        "format_type": "baseball_pct"
       },
       {
         "column": "bb",
@@ -5608,7 +5612,8 @@
         "column": "bavg",
         "label": "BAVG",
         "format": true,
-        "tooltip": "BAVG – Opponent Batting Average | hits allowed divided by at-bats faced."
+        "tooltip": "BAVG – Opponent Batting Average | hits allowed divided by at-bats faced.",
+        "format_type": "baseball_pct"
       },
       {
         "column": "pitch_wp",
@@ -8429,7 +8434,8 @@
         "column": "fldp",
         "label": "FLDP",
         "format": true,
-        "tooltip": "FLDP – Fielding Percentage | Answers how often does a fielder or team make the play when tasked with fielding a batted ball, throwing a ball, or receiving a thrown ball for an out. The formula is simple: the total number of putouts and assists by a defender, divided by the total number of chances (putouts, assists and errors)."
+        "tooltip": "FLDP – Fielding Percentage | Answers how often does a fielder or team make the play when tasked with fielding a batted ball, throwing a ball, or receiving a thrown ball for an out. The formula is simple: the total number of putouts and assists by a defender, divided by the total number of chances (putouts, assists and errors).",
+        "format_type": "baseball_pct"
       },
       {
         "column": "field_dp",
