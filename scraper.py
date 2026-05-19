@@ -78,6 +78,23 @@ def clean_players(data: list) -> list:
     return out
 
 
+def annotate_headers(headers: list) -> list:
+    """
+    Voeg format_type toe aan headers zodat de display-laag weet hoe te formatteren.
+
+    Baseball-conventie:
+    - Percentage-velden (AVG, OBP, SLG, FLDP, etc.) komen als integer uit de API:
+      bijv. 333 = .333 | 1050 = 1.050 (OPS kan > 1 zijn)
+    - Weergave: altijd als decimaal met leidende punt (.333), nooit als %
+    - De API markeert dit met format: true
+    - Wij slaan de ruwe integer op en laten de display-laag delen door 1000
+    """
+    for h in headers:
+        if h.get("format"):
+            h["format_type"] = "baseball_pct"  # integer / 1000 → .333 notatie
+    return headers
+
+
 def scrape_section(section: str, team: str = "", split: str = "",
                    round_: str = "") -> dict | None:
     """Haal één stats-sectie op."""
@@ -94,7 +111,7 @@ def scrape_section(section: str, team: str = "", split: str = "",
         return None
     return {
         "data": clean_players(result.get("data", [])),
-        "headers": result.get("headers", []),
+        "headers": annotate_headers(result.get("headers", [])),
     }
 
 
