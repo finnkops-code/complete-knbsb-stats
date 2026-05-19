@@ -1,0 +1,37 @@
+[
+  {
+    "name": "Amsterdam Pirates",
+    "id": "39583",
+    "file": "teams/amsterdam_pirates.json"
+  },
+  {
+    "name": "Curaçao Neptunus",
+    "id": "39587",
+    "file": "teams/cura_ao_neptunus.json"
+  },
+  {
+    "name": "HCAW",
+    "id": "39584",
+    "file": "teams/hcaw.json"
+  },
+  {
+    "name": "Kinheim",
+    "id": "39586",
+    "file": "teams/kinheim.json"
+  },
+  {
+    "name": "Worldwide Pharma Logistics Hoofddorp Pioniers",
+    "id": "39585",
+    "file": "teams/worldwide_pharma_logistics_hoofddorp_pioniers.json"
+  },
+  {
+    "name": "Oosterhout Twins",
+    "id": "39588",
+    "file": "teams/oosterhout_twins.json"
+  },
+  {
+    "name": "UVV",
+    "id": "39589",
+    "file": "teams/uvv.json"
+  }
+]

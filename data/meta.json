@@ -1,0 +1,26 @@
+{
+  "last_updated": "2026-05-19T07:12:52.457706+00:00",
+  "source": "https://stats.knbsbstats.nl/api/v1/stats/events/2026-lucky-day-hoofdklasse/",
+  "season": "2026 Lucky Day Hoofdklasse",
+  "player_counts": {
+    "batting": 101,
+    "pitching": 72,
+    "fielding": 144
+  },
+  "api_params": {
+    "stat_sections": [
+      "batting",
+      "pitching",
+      "fielding"
+    ],
+    "teams": {
+      "Amsterdam Pirates": "39583",
+      "Curaçao Neptunus": "39587",
+      "HCAW": "39584",
+      "Kinheim": "39586",
+      "Worldwide Pharma Logistics Hoofddorp Pioniers": "39585",
+      "Oosterhout Twins": "39588",
+      "UVV": "39589"
+    }
+  }
+}
