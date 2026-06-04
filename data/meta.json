@@ -1,12 +1,8 @@
 {
-  "last_updated": "2026-06-04T15:19:19.679976+00:00",
+  "last_updated": "2026-06-04T20:11:15.275381+00:00",
   "source": "https://stats.knbsbstats.nl/api/v1/stats/events/2026-lucky-day-hoofdklasse/",
   "season": "2026 Lucky Day Hoofdklasse",
-  "player_counts": {
-    "batting": 104,
-    "pitching": 78,
-    "fielding": 151
-  },
+  "player_counts": {},
   "api_params": {
     "stat_sections": [
       "batting",
