@@ -4366,7 +4366,7 @@
         "player_id": "734696"
       },
       {
-        "pitch_win": 1,
+        "pitch_win": 0,
         "pitch_loss": 0,
         "era": "0.00",
         "pitch_appear": 11,
@@ -4638,7 +4638,7 @@
         "player_id": "730679"
       },
       {
-        "pitch_win": 0,
+        "pitch_win": 1,
         "pitch_loss": 1,
         "era": "5.14",
         "pitch_appear": 6,
@@ -5556,7 +5556,7 @@
         "player_id": "742974"
       },
       {
-        "pitch_win": 3,
+        "pitch_win": 2,
         "pitch_loss": 4,
         "era": "2.59",
         "pitch_appear": 11,
@@ -5794,7 +5794,7 @@
         "player_id": "730696"
       },
       {
-        "pitch_win": 0,
+        "pitch_win": 1,
         "pitch_loss": 1,
         "era": "3.38",
         "pitch_appear": 11,
