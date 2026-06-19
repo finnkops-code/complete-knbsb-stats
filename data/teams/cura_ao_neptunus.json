@@ -4772,7 +4772,7 @@
           "era": "5.14",
           "pitch_appear": 6,
           "pitch_gs": 1,
-          "pitch_save": 0,
+          "pitch_save": 1,
           "pitch_cg": 0,
           "pitch_sho": 0,
           "pitch_ip": "14.0",
