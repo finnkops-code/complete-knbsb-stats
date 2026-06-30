@@ -1,7 +1,8 @@
 """
-KNBSB Hoofdklasse Stats Scraper – API versie
-Roept de JSON API rechtstreeks aan, geen browser nodig.
-Resultaten worden opgeslagen in /data als JSON.
+Czech Extraliga Stats Scraper
+API: stats.baseball.cz/api/v1/stats/events/extraliga-2026/index
+Structuur identiek aan KNBSB stats scraper.
+round=6792 = Základní část (reguliere competitie)
 """
 
 import json
@@ -10,54 +11,47 @@ import re
 import time
 from datetime import datetime, timezone
 
-import requests
+import urllib.request
+import urllib.parse
 
-BASE = "https://stats.knbsbstats.nl/api/v1/stats/events/2026-lucky-day-hoofdklasse"
-DATA = "data"
+BASE    = "https://stats.baseball.cz/api/v1/stats/events/extraliga-2026"
+ROUND   = "6792"   # Základní část
+DATA    = "data_extraliga"
 os.makedirs(DATA, exist_ok=True)
 
 HEADERS = {
-    "Accept": "application/json",
-    "Referer": "https://stats.knbsbstats.nl/en/events/2026-lucky-day-hoofdklasse/stats",
-    "User-Agent": "Mozilla/5.0 (compatible; HoofdklasseBot/2.0)",
+    "Accept":     "application/json",
+    "Referer":    "https://stats.baseball.cz/en/events/extraliga-2026/stats",
+    "User-Agent": "Mozilla/5.0 (compatible; ExtraligaBot/1.0)",
 }
 
 TEAMS = {
-    "Amsterdam Pirates":                           "39583",
-    "Curaçao Neptunus":                            "39587",
-    "HCAW":                                        "39584",
-    "Kinheim":                                     "39586",
-    "Worldwide Pharma Logistics Hoofddorp Pioniers":"39585",
-    "Oosterhout Twins":                            "39588",
-    "UVV":                                         "39589",
+    "Hroši":     "43158",
+    "Kotlářka":  "43154",
+    "Draci":     "43156",
+    "Hluboká":   "43155",
+    "Nuclears":  "43153",
+    "Eagles":    "43159",
+    "Arrows":    "43160",
+    "SaBaT":     "43157",
 }
-
-SPLITS = [
-    "", "last3", "last5", "last7", "home", "away",
-    "day", "night",
-    "0outs", "1out", "2outs",
-    "vsleft", "vsright",
-    "empty", "runner1", "runner2", "runner3",
-    "runners12", "runners13", "runners23", "loaded",
-    "scoring", "behind", "ahead",
-]
 
 STAT_SECTIONS = ["batting", "pitching", "fielding"]
 
 
 def clean_name(html: str) -> str:
-    """Verwijder HTML-tags uit naam-veld."""
     text = re.sub(r"<[^>]+>", " ", html)
     return " ".join(text.split()).strip()
 
 
 def fetch(url: str, params: dict = None) -> dict | None:
-    """Doe een GET-verzoek met retry."""
+    if params:
+        url = url + "?" + urllib.parse.urlencode(params)
     for attempt in range(3):
         try:
-            r = requests.get(url, params=params, headers=HEADERS, timeout=20)
-            r.raise_for_status()
-            return r.json()
+            req = urllib.request.Request(url, headers=HEADERS)
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                return json.loads(resp.read().decode("utf-8"))
         except Exception as e:
             print(f"  ⚠ Poging {attempt+1} mislukt ({url}): {e}")
             time.sleep(2 ** attempt)
@@ -65,12 +59,10 @@ def fetch(url: str, params: dict = None) -> dict | None:
 
 
 def clean_players(data: list) -> list:
-    """Maak namen leesbaar en voeg een 'player_id' veld toe."""
     out = []
     for row in data:
         row = dict(row)
         row["name"] = clean_name(row.get("name", ""))
-        # Haal player-id uit de link
         link = row.get("link", "")
         m = re.search(r"/players/(\d+)$", link)
         row["player_id"] = m.group(1) if m else None
@@ -79,63 +71,48 @@ def clean_players(data: list) -> list:
 
 
 def annotate_headers(headers: list) -> list:
-    """
-    Voeg format_type toe aan headers zodat de display-laag weet hoe te formatteren.
-
-    Baseball-conventie:
-    - Percentage-velden (AVG, OBP, SLG, FLDP, etc.) komen als integer uit de API:
-      bijv. 333 = .333 | 1050 = 1.050 (OPS kan > 1 zijn)
-    - Weergave: altijd als decimaal met leidende punt (.333), nooit als %
-    - De API markeert dit met format: true
-    - Wij slaan de ruwe integer op en laten de display-laag delen door 1000
-    """
     for h in headers:
         if h.get("format"):
-            h["format_type"] = "baseball_pct"  # integer / 1000 → .333 notatie
+            h["format_type"] = "baseball_pct"
     return headers
 
 
-def scrape_section(section: str, team: str = "", split: str = "",
-                   round_: str = "") -> dict | None:
-    """Haal één stats-sectie op."""
+def scrape_section(section: str, team: str = "", round_: str = ROUND) -> dict | None:
     params = {
-        "section": "players",
+        "section":       "players",
         "stats-section": section,
-        "team": team,
-        "round": round_,
-        "split": split,
-        "language": "en",
+        "team":          team,
+        "round":         round_,
+        "split":         "",
+        "language":      "en",
     }
     result = fetch(f"{BASE}/index", params)
     if not result:
         return None
     return {
-        "data": clean_players(result.get("data", [])),
+        "data":    clean_players(result.get("data", [])),
         "headers": annotate_headers(result.get("headers", [])),
     }
 
 
 def scrape_all_stats():
-    """Scrape batting/pitching/fielding voor alle teams + splits."""
-    print("📊 Scraping stats (alle teams, alle secties)…")
+    print("📊 Scraping stats (alle secties)…")
     all_stats = {}
-
     for section in STAT_SECTIONS:
         print(f"  ↳ {section}…")
         result = scrape_section(section)
         if result:
             all_stats[section] = result
+            print(f"     {len(result['data'])} spelers")
         time.sleep(0.5)
 
-    # Sla op
     with open(f"{DATA}/stats.json", "w", encoding="utf-8") as f:
         json.dump(all_stats, f, ensure_ascii=False, indent=2)
-    print(f"  ✅ stats.json ({sum(len(v['data']) for v in all_stats.values())} rijen)")
+    print(f"  ✅ stats.json")
     return all_stats
 
 
 def scrape_per_team():
-    """Scrape alle stats per team apart."""
     print("👕 Scraping per team…")
     os.makedirs(f"{DATA}/teams", exist_ok=True)
     team_index = []
@@ -160,44 +137,15 @@ def scrape_per_team():
         json.dump(team_index, f, ensure_ascii=False, indent=2)
 
 
-def scrape_splits():
-    """Scrape batting per split (thuis/uit/laatste N)."""
-    print("🔀 Scraping splits…")
-    interesting_splits = [
-        ("last3", "Last 3 Games"),
-        ("last5", "Last 5 Games"),
-        ("last7", "Last 7 Games"),
-        ("home",  "Home games"),
-        ("away",  "Away games"),
-    ]
-    splits_data = {}
-
-    for split_val, split_label in interesting_splits:
-        result = scrape_section("batting", split=split_val)
-        if result:
-            splits_data[split_val] = {"label": split_label, **result}
-        time.sleep(0.4)
-
-    with open(f"{DATA}/splits.json", "w", encoding="utf-8") as f:
-        json.dump(splits_data, f, ensure_ascii=False, indent=2)
-    print(f"  ✅ splits.json ({len(splits_data)} splits)")
-
-
 def scrape_standings():
-    """Haal de stand op via de aparte standings URL."""
     print("🏆 Scraping standings…")
-    url = "https://stats.knbsbstats.nl/api/v1/events/2026-lucky-day-hoofdklasse/standings"
+    url = f"https://stats.baseball.cz/api/v1/events/extraliga-2026/standings"
     result = fetch(url)
-    if not result:
-        # Fallback: probeer alternatieve URL
-        result = fetch(f"{BASE}/standings")
     if result:
         with open(f"{DATA}/standings.json", "w", encoding="utf-8") as f:
             json.dump(result, f, ensure_ascii=False, indent=2)
         print("  ✅ standings.json")
     else:
-        print("  ⚠ Standings niet beschikbaar via API")
-        # Schrijf leeg bestand zodat front-end niet crasht
         with open(f"{DATA}/standings.json", "w") as f:
             json.dump({}, f)
 
@@ -205,27 +153,24 @@ def scrape_standings():
 def write_meta(stats: dict):
     meta = {
         "last_updated": datetime.now(timezone.utc).isoformat(),
-        "source": "https://stats.knbsbstats.nl/api/v1/stats/events/2026-lucky-day-hoofdklasse/",
-        "season": "2026 Lucky Day Hoofdklasse",
+        "source":       f"{BASE}/index",
+        "season":       "Extraliga 2026",
+        "round":        ROUND,
         "player_counts": {s: len(v["data"]) for s, v in stats.items()},
-        "api_params": {
-            "stat_sections": STAT_SECTIONS,
-            "teams": TEAMS,
-        },
+        "teams": TEAMS,
     }
     with open(f"{DATA}/meta.json", "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, indent=2)
-    print(f"  ✅ meta.json")
+    print("  ✅ meta.json")
 
 
 def main():
-    print(f"\n🚀 KNBSB Hoofdklasse Scraper — {datetime.now(timezone.utc):%Y-%m-%d %H:%M UTC}\n")
-    stats    = scrape_all_stats()
+    print(f"\n🚀 Czech Extraliga Stats Scraper — {datetime.now(timezone.utc):%Y-%m-%d %H:%M UTC}\n")
+    stats = scrape_all_stats()
     scrape_per_team()
-    scrape_splits()
     scrape_standings()
     write_meta(stats)
-    print("\n✅ Klaar! Alle data staat in /data/\n")
+    print(f"\n✅ Klaar! Alle data staat in /{DATA}/\n")
 
 
 if __name__ == "__main__":
