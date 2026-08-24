@@ -1,7 +1,6 @@
 """
-KNBSB Hoofdklasse Stats Scraper – automatische slug detectie
-Detecteert automatisch het actieve baseball event op stats.knbsbstats.nl
-zodat je de slug nooit handmatig hoeft aan te passen.
+KNBSB Hoofdklasse Stats Scraper – probeert meerdere slugs
+Werkt automatisch voor regulier seizoen én playoffs.
 """
 
 import json
@@ -12,9 +11,8 @@ from datetime import datetime, timezone
 
 import requests
 
-CALENDAR_URL = "https://stats.knbsbstats.nl/api/v1/events?language=en"
-API_BASE     = "https://stats.knbsbstats.nl/api/v1/stats/events"
-DATA         = "data"
+API_BASE = "https://stats.knbsbstats.nl/api/v1/stats/events"
+DATA     = "data"
 os.makedirs(DATA, exist_ok=True)
 
 HEADERS = {
@@ -25,62 +23,45 @@ HEADERS = {
 
 STAT_SECTIONS = ["batting", "pitching", "fielding"]
 
-KEYWORDS = ["hoofdklasse", "honkbal", "lucky-day", "baseball"]
-EXCLUDE  = ["softbal", "softball", "vrouwen", "women", "jeugd", "youth"]
+# Alle mogelijke slugs voor 2026, van meest naar minst waarschijnlijk
+YEAR = datetime.now(timezone.utc).year
+SLUG_CANDIDATES = [
+    f"{YEAR}-lucky-day-hoofdklasse",
+    f"{YEAR}-lucky-day-hoofdklasse-honkbal",
+    f"{YEAR}-lucky-day-hoofdklasse-playoffs",
+    f"{YEAR}-lucky-day-hoofdklasse-play-offs",
+    f"{YEAR}-lucky-day-hoofdklasse-holland-series",
+    f"{YEAR}-hoofdklasse-honkbal",
+    f"{YEAR}-hoofdklasse-baseball",
+    f"{YEAR}-knbsb-hoofdklasse",
+]
 
 
-def find_active_slug():
-    """Detecteer automatisch de actieve slug via de API of HTML kalender."""
-    print("  Zoeken naar actieve slug...")
+def find_working_slug():
+    """Probeer slugs één voor één totdat er data terugkomt."""
+    print("  Zoeken naar werkende slug...")
+    for slug in SLUG_CANDIDATES:
+        url = f"{API_BASE}/{slug}/index"
+        params = {"section": "players", "stats-section": "batting", "language": "en"}
+        try:
+            r = requests.get(url, params=params, headers=HEADERS, timeout=10)
+            if r.status_code == 200:
+                data = r.json()
+                rows = data.get("data", []) if isinstance(data, dict) else []
+                if rows:
+                    print(f"  Werkende slug gevonden: {slug} ({len(rows)} batting rijen)")
+                    return slug
+                else:
+                    print(f"    {slug} → leeg")
+            else:
+                print(f"    {slug} → HTTP {r.status_code}")
+        except Exception as e:
+            print(f"    {slug} → fout: {e}")
+        time.sleep(0.5)
 
-    # Probeer API kalender
-    try:
-        r = requests.get(CALENDAR_URL, headers=HEADERS, timeout=15)
-        if r.status_code == 200:
-            data = r.json()
-            events = data if isinstance(data, list) else (
-                data.get("events") or data.get("data") or []
-            )
-            candidates = []
-            for ev in events:
-                slug   = ev.get("slug") or ev.get("id") or ""
-                name   = (ev.get("name") or ev.get("title") or "").lower()
-                slug_l = slug.lower()
-                if any(k in slug_l or k in name for k in KEYWORDS) \
-                        and not any(x in slug_l or x in name for x in EXCLUDE):
-                    candidates.append(slug)
-                    print(f"    Kandidaat: {slug}")
-            if candidates:
-                candidates.sort(reverse=True)
-                print(f"  Gekozen: {candidates[0]}")
-                return candidates[0]
-    except Exception as e:
-        print(f"  API kalender mislukt: {e}")
-
-    # Fallback: HTML kalender
-    try:
-        r = requests.get(
-            "https://stats.knbsbstats.nl/en/calendar",
-            headers={**HEADERS, "Accept": "text/html"},
-            timeout=15
-        )
-        if r.status_code == 200:
-            slugs = list(set(re.findall(r'/events/([\w-]+)/stats', r.text)))
-            candidates = [s for s in slugs
-                          if any(k in s.lower() for k in KEYWORDS)
-                          and not any(x in s.lower() for x in EXCLUDE)]
-            if candidates:
-                candidates.sort(reverse=True)
-                print(f"  Gekozen (HTML): {candidates[0]}")
-                return candidates[0]
-    except Exception as e:
-        print(f"  HTML kalender mislukt: {e}")
-
-    # Laatste fallback
-    year = datetime.now(timezone.utc).year
-    fallback = f"{year}-lucky-day-hoofdklasse"
-    print(f"  Fallback: {fallback}")
-    return fallback
+    # Niets gevonden — gebruik de meest logische als fallback
+    print(f"  Geen werkende slug gevonden, gebruik fallback: {SLUG_CANDIDATES[0]}")
+    return SLUG_CANDIDATES[0]
 
 
 def clean_name(html):
@@ -132,7 +113,7 @@ def scrape_section(base, section):
 def main():
     print(f"\nHoofdklasse Scraper — {datetime.now(timezone.utc):%Y-%m-%d %H:%M UTC}\n")
 
-    slug = find_active_slug()
+    slug = find_working_slug()
     base = f"{API_BASE}/{slug}"
     print(f"  Base: {base}\n")
 
@@ -151,7 +132,7 @@ def main():
         "last_updated":  datetime.now(timezone.utc).isoformat(),
         "source":        base,
         "slug":          slug,
-        "season":        f"Lucky Day Hoofdklasse {datetime.now(timezone.utc).year}",
+        "season":        f"Lucky Day Hoofdklasse {YEAR}",
         "player_counts": {s: len(v["data"]) for s, v in all_stats.items()},
     }
 
